@@ -1,0 +1,242 @@
+# Defines all services for the AI Credit Risk Assessment System
+# Run with: docker compose up -d
+
+services:
+  # =========================================================================
+  # MongoDB - Persistent Data Storage
+  # =========================================================================
+  mongodb:
+    image: mongo:latest
+    container_name: credit_risk_mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin_password
+      MONGO_INITDB_DATABASE: loan_agent_db
+    volumes:
+      # Database persistence
+      - mongodb_data:/data/db
+      # Initialization scripts
+      - ./scripts/init-mongodb.js:/docker-entrypoint-initdb.d/init.js:ro
+    networks:
+      - credit_risk_network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh mongodb://admin:admin_password@localhost:27017/admin
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  # =========================================================================
+  # Backend - Main FastAPI Application
+  # =========================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend-base
+    container_name: credit_risk_backend
+    ports:
+      - "8000:8000"
+    environment:
+      # MongoDB Configuration
+      MONGO_URI: "mongodb://admin:admin_password@mongodb:27017"
+      MONGODB_DB_NAME: "loan_agent_db"
+      
+      # Application Settings
+      USE_LOCAL_LLM: "true"
+      OPENAI_API_KEY: ""
+      FRONTEND_ORIGIN: "http://localhost:5173"
+      
+      # Risk Thresholds
+      THRESHOLD_APPROVE: "0.4"
+      THRESHOLD_REJECT: "0.7"
+      
+      # Plaid Configuration (if used)
+      PLAID_CLIENT_ID: ""
+      PLAID_SECRET: ""
+      PLAID_ENV: "sandbox"
+      
+      # Credit Bureau Configuration - Points to service in compose
+      CREDIT_BUREAU_API_URL: "http://credit_bureau:8001"
+      CREDIT_BUREAU_API_KEY: "mock_api_key_12345"
+      
+      # File Upload Configuration
+      UPLOAD_DIR: "/app/uploads"
+      MAX_FILE_SIZE: "5242880"
+      
+      # Python Settings
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    
+    volumes:
+      # Source code for live reload during development
+      - .:/app
+      - /app/__pycache__
+      
+      # Models - Persistent ML models storage
+      - ml_models:/app/models
+      
+      # Upload Directory - For KYC, payslips, documents
+      - uploads_data:/app/uploads
+      
+      # Cache for pip
+      - pip_cache:/.cache/pip
+    
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      credit_bureau:
+        condition: service_started
+    
+    networks:
+      - credit_risk_network
+    
+    # Override default command for local development with reload
+    command: >
+      sh -c "python models/train_dummy.py &&
+             uvicorn main:app 
+             --host 0.0.0.0 
+             --port 8000 
+             --reload"
+    
+    restart: unless-stopped
+
+  # =========================================================================
+  # Frontend - React/Vite Application
+  # =========================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend-runtime
+    container_name: credit_risk_frontend
+    ports:
+      - "5173:5173"
+    
+    environment:
+      VITE_API_URL: "http://localhost:8000"
+      NODE_ENV: "development"
+    
+    volumes:
+      # Source code for hot reload
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+      - /app/frontend/.vite
+    
+    depends_on:
+      - backend
+    
+    networks:
+      - credit_risk_network
+    
+    restart: unless-stopped
+
+  # =========================================================================
+  # Credit Bureau Mock API - External Service Simulation
+  # =========================================================================
+  credit_bureau:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: credit-bureau
+    container_name: credit_risk_bureau
+    ports:
+      - "8001:8001"
+    
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    
+    networks:
+      - credit_risk_network
+    
+    restart: unless-stopped
+
+  # =========================================================================
+  # Optional: Development Tools Container (Jupyter for ML exploration)
+  # DISABLED: Image pull failing. Uncomment codes below to enable.
+  # =========================================================================
+  # jupyter:
+  #   image: jupyter/datascience-notebook:latest
+  #   container_name: credit_risk_jupyter
+  #   ports:
+  #     - "8888:8888"
+  #   
+  #   environment:
+  #     JUPYTER_ENABLE_LAB: "yes"
+  #   
+  #   volumes:
+  #     - ./models:/home/jovyan/models
+  #     - ./services:/home/jovyan/services
+  #     - ./tools:/home/jovyan/tools
+  #     - ./notebooks:/home/jovyan/notebooks
+  #   
+  #   networks:
+  #     - credit_risk_network
+  #   
+  #   command: >
+  #     start-notebook.sh
+  #     --NotebookApp.token=''
+  #     --NotebookApp.password=''
+  #     --ip=0.0.0.0
+  #   
+  #   restart: unless-stopped
+
+# ============================================================================
+# Volumes - For persistent data storage
+# ============================================================================
+volumes:
+  # MongoDB data persistence
+  mongodb_data:
+    driver: local
+
+  # ML Models storage
+  ml_models:
+    driver: local
+
+  # Upload directory for documents, KYC, payslips
+  uploads_data:
+    driver: local
+
+  # pip cache for faster builds
+  pip_cache:
+    driver: local
+
+# ============================================================================
+# Networks - For inter-service communication
+# ============================================================================
+networks:
+  credit_risk_network:
+    driver: bridge
+
+# ============================================================================
+# Helpful Comments
+# ============================================================================
+# 
+# To start the entire system:
+#   docker compose up -d
+#
+# To view logs:
+#   docker compose logs -f [service_name]  # Leave blank for all services
+#
+# To rebuild images:
+#   docker compose build
+#
+# To stop all services:
+#   docker compose down
+#
+# To remove volumes (careful - removes data):
+#   docker compose down -v
+#
+# To access MongoDB:
+#   mongosh mongodb://admin:admin_password@localhost:27017
+#
+# Frontend will be available at: http://localhost:5173
+# Backend API at: http://localhost:8000
+# API Docs at: http://localhost:8000/docs
+# Credit Bureau Mock at: http://localhost:8001
+# Jupyter at: http://localhost:8888
+#

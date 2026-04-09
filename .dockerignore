@@ -1,0 +1,79 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+.venv
+.env
+.env.local
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Frontend
+node_modules/
+npm-debug.log
+yarn-error.log
+.next/
+out/
+dist/
+.cache/
+.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git
+.gitignore
+.github/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+README.md
+docs/
+
+# Testing
+tests/
+.pytest/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+.env.example
+.gitattributes
+LICENSE
+*.md
+CONTRIBUTING.md
+
+# Development
+.editorconfig
+.eslintignore
+.prettierignore
+*.log
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# Local development
+scripts/
+notebooks/
+.ipynb_checkpoints/
